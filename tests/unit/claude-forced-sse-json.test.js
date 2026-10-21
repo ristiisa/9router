@@ -100,4 +100,140 @@ describe("Claude JSON clients behind forced-stream upstreams", () => {
     expect(json.content).toEqual([{ type: "text", text: "unchanged" }]);
     expect(json.stop_reason).toBe("end_turn");
   });
+
+  it("converts Antigravity/Gemini SSE stream to Claude JSON message with text, thinking, and usage", async () => {
+    const agChunks = [
+      {
+        response: {
+          candidates: [{
+            content: {
+              role: "model",
+              parts: [
+                { thought: true, text: "Let me think about this." },
+                { text: "ok" }
+              ]
+            },
+            finishReason: "STOP"
+          }],
+          usageMetadata: { promptTokenCount: 15, candidatesTokenCount: 2, totalTokenCount: 17 },
+          modelVersion: "gemini-3.8-flash",
+          responseId: "resp_ag_123"
+        }
+      }
+    ];
+    const raw = agChunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+    const ctx = {
+      ...context(raw, FORMATS.CLAUDE, FORMATS.ANTIGRAVITY),
+      provider: "antigravity",
+      model: "ag/gemini-3.8-flash"
+    };
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result.success).toBe(true);
+    expect(result.response.headers.get("content-type")).toBe("application/json");
+    const json = await result.response.json();
+    expect(json).toMatchObject({
+      type: "message",
+      role: "assistant",
+      model: "gemini-3.8-flash",
+      stop_reason: "end_turn",
+      stop_sequence: null,
+      usage: { input_tokens: 15, output_tokens: 2 }
+    });
+    expect(json.content).toEqual([
+      { type: "thinking", thinking: "Let me think about this." },
+      { type: "text", text: "ok" }
+    ]);
+  });
+
+  it("converts Antigravity/Gemini SSE stream with functionCall to Claude tool_use JSON message", async () => {
+    const agChunks = [
+      {
+        response: {
+          candidates: [{
+            content: {
+              role: "model",
+              parts: [
+                { functionCall: { id: "call_lookup_1", name: "lookup", args: { code: "A" } } }
+              ]
+            },
+            finishReason: "STOP"
+          }],
+          usageMetadata: { promptTokenCount: 20, candidatesTokenCount: 5, totalTokenCount: 25 },
+          modelVersion: "gemini-3.8-flash",
+          responseId: "resp_ag_tool"
+        }
+      }
+    ];
+    const raw = agChunks.map(chunk => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
+    const ctx = {
+      ...context(raw, FORMATS.CLAUDE, FORMATS.ANTIGRAVITY),
+      provider: "antigravity",
+      model: "ag/gemini-3.8-flash"
+    };
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    expect(json.content).toEqual([
+      { type: "tool_use", id: "call_lookup_1", name: "lookup", input: { code: "A" } }
+    ]);
+    expect(json.stop_reason).toBe("tool_use");
+    expect(json.usage).toEqual({ input_tokens: 20, output_tokens: 5 });
+  });
+
+  it("translates direct Antigravity/Gemini non-streaming candidate responses to Claude Messages", () => {
+    const geminiCandidateBody = {
+      response: {
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [
+              { thought: true, text: "thinking..." },
+              { text: "hello world" }
+            ]
+          },
+          finishReason: "STOP"
+        }],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 3, totalTokenCount: 13 },
+        modelVersion: "gemini-3.8-flash",
+        responseId: "resp_ns_1"
+      }
+    };
+    const json = translateNonStreamingResponse(geminiCandidateBody, FORMATS.ANTIGRAVITY, FORMATS.CLAUDE);
+    expect(json).toMatchObject({
+      type: "message",
+      role: "assistant",
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 3 }
+    });
+    expect(json.content).toEqual([
+      { type: "thinking", thinking: "thinking..." },
+      { type: "text", text: "hello world" }
+    ]);
+  });
+
+  it("translates direct Antigravity/Gemini non-streaming candidate response with tool calls to Claude Messages", () => {
+    const geminiCandidateBody = {
+      response: {
+        candidates: [{
+          content: {
+            role: "model",
+            parts: [
+              { functionCall: { name: "get_weather", args: { location: "London" } } }
+            ]
+          },
+          finishReason: "STOP"
+        }],
+        usageMetadata: { promptTokenCount: 12, candidatesTokenCount: 6, totalTokenCount: 18 },
+        modelVersion: "gemini-3.8-flash",
+        responseId: "resp_ns_tool"
+      }
+    };
+    const json = translateNonStreamingResponse(geminiCandidateBody, FORMATS.ANTIGRAVITY, FORMATS.CLAUDE);
+    expect(json.type).toBe("message");
+    expect(json.stop_reason).toBe("tool_use");
+    expect(json.content).toEqual([
+      expect.objectContaining({ type: "tool_use", name: "get_weather", input: { location: "London" } })
+    ]);
+    expect(json.usage).toEqual({ input_tokens: 12, output_tokens: 6 });
+  });
 });

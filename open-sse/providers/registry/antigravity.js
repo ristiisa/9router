@@ -20,6 +20,7 @@ export default {
   serviceKinds: ["llm", "image", "webSearch"],
   transport: {
     baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
+    forceStream: true,
     format: "antigravity",
     headers: {
       "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,

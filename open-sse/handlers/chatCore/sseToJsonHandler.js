@@ -131,6 +131,11 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   if (chunks.length === 0) return null;
 
   const first = chunks[0];
+  const firstResp = first?.response || first;
+  const chunkModel = firstResp?.modelVersion || first?.model || fallbackModel || "unknown";
+  const rawId = firstResp?.responseId || first?.id;
+  const chunkId = rawId ? (String(rawId).startsWith("chatcmpl-") ? String(rawId) : `chatcmpl-${rawId}`) : `chatcmpl-${Date.now()}`;
+
   const contentParts = [];
   const reasoningParts = [];
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
@@ -138,24 +143,60 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   let usage = null;
 
   for (const chunk of chunks) {
-    const choice = chunk?.choices?.[0];
-    const delta = choice?.delta || {};
-    if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
-    if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
-    if (choice?.finish_reason) finishReason = choice.finish_reason;
-    if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
-
-    // Accumulate tool_calls from streaming deltas
-    if (Array.isArray(delta.tool_calls)) {
-      for (const tc of delta.tool_calls) {
-        const idx = tc.index ?? 0;
-        if (!toolCallMap.has(idx)) {
-          toolCallMap.set(idx, { id: tc.id || "", type: "function", function: { name: "", arguments: "" } });
+    const resp = chunk?.response || chunk;
+    if (resp?.candidates?.[0]) {
+      const candidate = resp.candidates[0];
+      const content = candidate.content;
+      if (content?.parts) {
+        for (const part of content.parts) {
+          if (part.thought === true && part.text) {
+            reasoningParts.push(part.text);
+          } else if (part.text !== undefined && part.text.length > 0) {
+            contentParts.push(part.text);
+          }
+          if (part.functionCall) {
+            const fc = part.functionCall;
+            const idx = toolCallMap.size;
+            const id = fc.id || `call_${fc.name}_${Date.now()}_${idx}`;
+            const args = typeof fc.args === "string" ? fc.args : JSON.stringify(fc.args || {});
+            toolCallMap.set(idx, { id, type: "function", function: { name: fc.name || "", arguments: args } });
+          }
         }
-        const existing = toolCallMap.get(idx);
-        if (tc.id) existing.id = tc.id;
-        if (tc.function?.name) existing.function.name += tc.function.name;
-        if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+      }
+      if (candidate.finishReason) {
+        let fr = String(candidate.finishReason).toLowerCase();
+        if (fr === "stop" && toolCallMap.size > 0) fr = "tool_calls";
+        else if (fr === "max_tokens") fr = "length";
+        finishReason = fr;
+      }
+      const usageMeta = resp.usageMetadata || chunk?.usageMetadata;
+      if (usageMeta) {
+        usage = {
+          prompt_tokens: (usageMeta.promptTokenCount || 0) + (usageMeta.thoughtsTokenCount || 0),
+          completion_tokens: usageMeta.candidatesTokenCount || 0,
+          total_tokens: usageMeta.totalTokenCount || 0
+        };
+      }
+    } else {
+      const choice = chunk?.choices?.[0];
+      const delta = choice?.delta || {};
+      if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
+      if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+      if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
+
+      // Accumulate tool_calls from streaming deltas
+      if (Array.isArray(delta.tool_calls)) {
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index ?? 0;
+          if (!toolCallMap.has(idx)) {
+            toolCallMap.set(idx, { id: tc.id || "", type: "function", function: { name: "", arguments: "" } });
+          }
+          const existing = toolCallMap.get(idx);
+          if (tc.id) existing.id = tc.id;
+          if (tc.function?.name) existing.function.name += tc.function.name;
+          if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
+        }
       }
     }
   }
@@ -167,10 +208,10 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   }
 
   const result = {
-    id: first.id || `chatcmpl-${Date.now()}`,
+    id: chunkId,
     object: "chat.completion",
     created: first.created || Math.floor(Date.now() / 1000),
-    model: first.model || fallbackModel || "unknown",
+    model: chunkModel,
     choices: [{ index: 0, message, finish_reason: finishReason }]
   };
   if (usage) result.usage = usage;
@@ -343,11 +384,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // a 90%-cached request from a cheap one without this.
     if (usage && Object.keys(usage).length > 0) parsed.usage = usage;
 
-    // Strip reasoning_content only when content is non-empty.
+    // Strip reasoning_content only when content is non-empty and target format isn't Claude.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
     // reasoning_content is the only useful output and must be preserved.
-    // Previously this was unconditional, which broke Qwen3.5, Claude extended thinking, etc.
-    if (parsed?.choices) {
+    // Claude format uses reasoning_content to build thinking content blocks.
+    if (sourceFormat !== FORMATS.CLAUDE && parsed?.choices) {
       for (const choice of parsed.choices) {
         if (choice?.message?.reasoning_content && choice.message.content) {
           delete choice.message.reasoning_content;

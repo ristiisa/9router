@@ -96,6 +96,17 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
+  // If response is already in OpenAI Chat Completions shape (e.g. parsed from SSE
+  // or returned by an OpenAI-compatible upstream)
+  if (responseBody?.choices) {
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      return openAICompletionToResponses(responseBody, customToolNames);
+    }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return openAICompletionToClaudeMessage(responseBody);
+    }
+    return responseBody;
+  }
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -164,6 +175,12 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return openAICompletionToClaudeMessage(result);
+    }
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      return openAICompletionToResponses(result, customToolNames);
+    }
     return result;
   }
 
@@ -225,7 +242,14 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 
   // Ollama
   if (targetFormat === FORMATS.OLLAMA) {
-    return ollamaBodyToOpenAI(responseBody);
+    const result = ollamaBodyToOpenAI(responseBody);
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return openAICompletionToClaudeMessage(result);
+    }
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      return openAICompletionToResponses(result, customToolNames);
+    }
+    return result;
   }
 
   return responseBody;
