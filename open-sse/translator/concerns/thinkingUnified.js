@@ -246,7 +246,10 @@ function stripAll(body) {
   delete body.thinkingConfig;
   delete body.enable_thinking;
   delete body.thinking_budget;
-  delete body.output_config;
+  if (body.output_config && typeof body.output_config === "object") {
+    delete body.output_config.effort;
+    if (Object.keys(body.output_config).length === 0) delete body.output_config;
+  } else delete body.output_config;
   if (body.generationConfig) delete body.generationConfig.thinkingConfig;
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
   if (body.params && typeof body.params === "object") {
@@ -294,7 +297,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       const level = toLevel(eff);
       // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
       // Claude effort has no "minimal" (always-on models clamp "none" to it).
-      body.output_config = { effort: level === "auto" ? "high"
+      body.output_config = { ...body.output_config, effort: level === "auto" ? "high"
         : level === "minimal" ? "low"
         : level === "xhigh" && !supportedLevels?.includes("xhigh") ? "high" : level };
       break;
