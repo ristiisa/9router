@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
+import { resolvePayloadAccess, redactDetails, auditPayloadAccess } from "@/lib/auth/promptLogging";
 
 /**
  * GET /api/usage/request-details
@@ -53,17 +54,13 @@ export async function GET(request) {
     // wholesale lets any dashboard-authenticated user (or, if requireLogin is
     // disabled, anyone) read every user's conversation history. Keep the
     // metadata (model, tokens, latency, status) but drop message content.
-    const redactedDetails = (result.details || []).map((d) => {
-      const redacted = { ...d };
-      for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-        if (redacted[key] !== undefined) {
-          redacted[key] = { redacted: true };
-        }
-      }
-      return redacted;
-    });
+    // Debugging opt-in (ENABLE_PROMPT_LOGGING / promptLoggingEnabled) lifts this
+    // only for a verified admin session, and every use is audit-logged.
+    const access = await resolvePayloadAccess(request);
+    if (access.reason !== "disabled") auditPayloadAccess(request, access, (result.details || []).length);
+    const details = access.allowed ? (result.details || []) : redactDetails(result.details);
 
-    return NextResponse.json({ ...result, details: redactedDetails });
+    return NextResponse.json({ ...result, details, payloadsRedacted: !access.allowed });
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

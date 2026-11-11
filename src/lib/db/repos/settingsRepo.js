@@ -44,6 +44,8 @@ const DEFAULT_SETTINGS = {
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,
   observabilityMaxJsonSize: 5,
+  // Debug-only: let an admin session see unredacted request details (audit-logged).
+  promptLoggingEnabled: false,
   outboundProxyEnabled: false,
   outboundProxyUrl: "",
   outboundNoProxy: "",

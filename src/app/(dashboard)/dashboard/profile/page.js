@@ -649,6 +649,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updatePromptLoggingEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ promptLoggingEnabled: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, promptLoggingEnabled: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update promptLoggingEnabled:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -740,6 +755,7 @@ export default function ProfilePage() {
   };
 
   const observabilityEnabled = settings.enableObservability === true;
+  const promptLoggingEnabled = settings.promptLoggingEnabled === true;
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -1616,6 +1632,19 @@ export default function ProfilePage() {
             <Toggle
               checked={observabilityEnabled}
               onChange={updateObservabilityEnabled}
+              disabled={loading}
+            />
+          </div>
+          <div className="flex items-start sm:items-center justify-between gap-4 mt-4 pt-4 border-t border-border">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Prompt logging (debug)</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Show full request/response payloads in Usage &gt; Request Details to signed-in admins. Off by default; every view is audit-logged.
+              </p>
+            </div>
+            <Toggle
+              checked={promptLoggingEnabled}
+              onChange={updatePromptLoggingEnabled}
               disabled={loading}
             />
           </div>

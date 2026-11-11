@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Usage**: opt-in prompt logging for debugging. `ENABLE_PROMPT_LOGGING=true` or the Profile toggle lifts the `/api/usage/request-details` redaction, only for a verified dashboard session (SSO sessions must be listed in `PROMPT_LOGGING_ADMINS` when set). Every view and denied attempt, and every toggle change, is logged as `[AUDIT] prompt-logging …` with actor and timestamp. Redacted by default; the response carries `payloadsRedacted`.
+
 # v0.5.119 (2026-11-11)
 
 ## Features

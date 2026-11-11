@@ -85,6 +85,7 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
 
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
+  const [payloadsRedacted, setPayloadsRedacted] = useState(true);
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 20,
@@ -130,6 +131,7 @@ export default function RequestDetailsTab() {
       const data = await res.json();
 
       setDetails(data.details || []);
+      setPayloadsRedacted(data.payloadsRedacted !== false);
       setPagination(prev => ({ ...prev, ...data.pagination }));
     } catch (error) {
       console.error("Failed to fetch request details:", error);
@@ -437,6 +439,12 @@ export default function RequestDetailsTab() {
                   </p>
                 )}
               </div>
+            )}
+
+            {payloadsRedacted && (
+              <p className="mb-4 text-xs text-text-muted">
+                Payloads are redacted. An admin can enable Prompt logging in Profile settings (or set ENABLE_PROMPT_LOGGING=true) to view them.
+              </p>
             )}
 
             <div className="space-y-4">

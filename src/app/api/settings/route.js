@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { auditPromptLoggingToggle } from "@/lib/auth/promptLogging";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -78,6 +79,11 @@ export async function PATCH(request) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
       }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "promptLoggingEnabled")) {
+      body.promptLoggingEnabled = body.promptLoggingEnabled === true;
+      await auditPromptLoggingToggle(request, body.promptLoggingEnabled);
     }
 
     const settings = await updateSettings(body);
