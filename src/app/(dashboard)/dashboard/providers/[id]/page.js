@@ -36,7 +36,7 @@ const MCODE_LEASE_PROVIDERS = new Set(["minimax-code", "minimax-code-global"]);
 // Providers whose registry list is only an offline fallback: the dashboard
 // renders the live per-connection catalog from GET /api/providers/[id]/models
 // when one resolves, and falls back to the static rows otherwise.
-const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode"]);
+const LIVE_MODEL_CATALOG_PROVIDERS = new Set(["cursor", "zed", "claude", "commandcode", "antigravity"]);
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -1968,10 +1968,8 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
-          onSave={async (modelId, caps, transport) => {
-            // caps.stt is a UI-only flag; the API accepts transports only on
-            // type "stt" records, so the save derives the type from it.
-            await handleAddCustomModel(modelId, caps?.stt ? "stt" : "llm", providerStorageAlias, caps, transport);
+          onSave={async (modelId, type, caps, transport) => {
+            await handleAddCustomModel(modelId, type, providerStorageAlias, caps, transport);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
